@@ -1,0 +1,81 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+*.env
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+.venv/
+
+# Flask instance folder
+instance/
+
+# Byte-compiled / optimized files
+*.pyc
+*.pyo
+*.pyd
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*~
+*.sublime-project
+*.sublime-workspace
+*.iml
+
+# Jupyter Notebook files
+.ipynb_checkpoints
+
+# Logs
+*.log
+
+# Pytest cache
+.cache/
+.pytest_cache/
+
+# coverage reports
+.coverage
+.coverage.*
+htmlcov/
+
+# Flask specific
+*.db
+*.sqlite3
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+
+firebase_credential.json

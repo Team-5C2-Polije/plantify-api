@@ -50,8 +50,6 @@ def detail_photo(device_id, photo_id):
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
-@device_bp.route('/device/<device_id>/histories', methods=['GET'])
-
 @device_bp.route('/device/<device_id>/photos', methods=['GET'])
 def photos(device_id):
     try:

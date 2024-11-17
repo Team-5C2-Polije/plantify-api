@@ -1,0 +1,4 @@
+device : 
+ add schedule
+ update schedule
+ delete schedule

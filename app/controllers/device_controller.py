@@ -53,11 +53,16 @@ def detail_photo(device_id, photo_id):
 @device_bp.route('/device/<device_id>/photos', methods=['GET'])
 def photos(device_id):
     try:
-        photos_ref = client.collection('devices').document(device_id).collection('photos').get()
+        photos_ref = client.collection('devices') \
+                            .document(device_id) \
+                            .collection('photos') \
+                            .order_by('createdAt', direction=firestore.Query.DESCENDING) \
+                            .get()
+
         photos_data = []
 
         for photo in photos_ref:
-            # Include the document ID in the photo data
+            # Menambahkan document ID ke dalam data photo
             photo_dict = photo.to_dict()
             photo_dict['id'] = photo.id  # Adding document ID
             photos_data.append(photo_dict)
@@ -66,14 +71,20 @@ def photos(device_id):
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
+
 @device_bp.route('/device/<device_id>/histories', methods=['GET'])
 def histories(device_id):
     try:
-        histories_ref = client.collection('devices').document(device_id).collection('histories').get()
+        histories_ref = client.collection('devices') \
+                               .document(device_id) \
+                               .collection('histories') \
+                               .order_by('createdAt', direction=firestore.Query.DESCENDING) \
+                               .get()
+
         histories_data = []
 
         for history in histories_ref:
-            # Include the document ID in the history data
+            # Menambahkan document ID ke dalam data history
             history_dict = history.to_dict()
             history_dict['id'] = history.id  # Adding document ID
             histories_data.append(history_dict)

@@ -11,6 +11,7 @@ def auth():
     data = request.json
     email = data.get('email')
     uid = data.get('uid')
+    fcmToken = data.get('fcmToken')
     fullname = data.get('fullname')
 
     if not email:
@@ -19,12 +20,24 @@ def auth():
         return ResponseUtil.error("UID parameter is required", data=None, status_code=400)
     if not fullname:
         return ResponseUtil.error("Fullname parameter is required", data=None, status_code=400)
+    if not fcmToken:
+        return ResponseUtil.error("FCM TOKEN parameter is required", data=None, status_code=400)
 
     try:
         user_ref = client.collection('users').where('email', '==', email).limit(1).get()
 
         if user_ref:
-            user_data = user_ref[0].to_dict()
+            user_doc = user_ref[0]
+            user_ref_id = user_doc.id
+
+            client.collection('users').document(user_ref_id).update({
+                'fcmToken': fcmToken,
+                'updatedAt': SERVER_TIMESTAMP
+            })
+
+            user_data = user_doc.to_dict()
+            user_data['fcmToken'] = fcmToken
+
             return ResponseUtil.success("Autentikasi Berhasil", user_data)
         else:
             uid_check_ref = client.collection('users').document(uid).get()
@@ -33,6 +46,7 @@ def auth():
 
             user_ref = client.collection('users').document(uid)
             data['createdAt'] = SERVER_TIMESTAMP
+            data['fcmToken'] = fcmToken
             data['devices'] = {}
             user_ref.set(data)
 
@@ -92,6 +106,38 @@ def addDevice():
         
         else:
             return ResponseUtil.error("Device not found", data=None, status_code=400)
+
+    except Exception as e:
+        return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
+
+@auth_bp.route('/delete_device/', methods=['DELETE'])
+def delete_device():
+    data = request.json
+    email = data.get('email')
+    device_id = data.get('device_id')
+
+    if not email:
+        return ResponseUtil.error("Email parameter is required", data=None, status_code=400)
+    if not device_id:
+        return ResponseUtil.error("Device ID parameter is required", data=None, status_code=400)
+    
+    try:
+        # Cari user berdasarkan email
+        user_ref = client.collection('users').where('email', '==', email).limit(1).get()
+        if not user_ref:
+            return ResponseUtil.error("User not found", data=None, status_code=400)
+
+        user_doc = user_ref[0]
+        user_data = user_doc.to_dict()
+        user_devices = user_data.get('devices', {})
+
+        # Hapus device dari field devices
+        del user_devices[device_id]
+
+        # Update user dengan menghapus device dari field devices
+        client.collection('users').document(user_doc.id).update({'devices': user_devices})
+
+        return ResponseUtil.success("Device deleted successfully")
 
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)

@@ -91,6 +91,7 @@ def delete_device(device_id):
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
+# TODO : deprecated
 @device_bp.route('/device/update_light_intensity', methods=['POST'])
 def update_light_intensity():
     data = request.json
@@ -104,17 +105,14 @@ def update_light_intensity():
         return ResponseUtil.error("lightIntensity parameter is required", data=None, status_code=400)
 
     try:
-        # Cari device berdasarkan token
         device_ref = client.collection('devices').where('token', '==', token).limit(1).get()
 
         if not device_ref:
             return ResponseUtil.error("Device not found with the provided token", data=None, status_code=404)
 
-        # Ambil device_id dari data device yang ditemukan
         device_data = device_ref[0].to_dict()
         device_id = device_ref[0].id
 
-        # Perbarui nilai lightIntensity di Realtime Database
         rtdb_ref = db.reference(f'{device_id}/lightIntensity')
         rtdb_ref.set(new_light_intensity)
 
@@ -123,6 +121,7 @@ def update_light_intensity():
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
+# TODO : deprecated
 @device_bp.route('/device/update_water_vol', methods=['POST'])
 def update_water_vol():
     data = request.json
@@ -136,17 +135,14 @@ def update_water_vol():
         return ResponseUtil.error("waterVol parameter is required", data=None, status_code=400)
 
     try:
-        # Cari device berdasarkan token
         device_ref = client.collection('devices').where('token', '==', token).limit(1).get()
 
         if not device_ref:
             return ResponseUtil.error("Device not found with the provided token", data=None, status_code=404)
 
-        # Ambil device_id dari data device yang ditemukan
         device_data = device_ref[0].to_dict()
         device_id = device_ref[0].id
 
-        # Perbarui nilai waterVol di Realtime Database
         rtdb_ref = db.reference(f'{device_id}/waterVol')
         rtdb_ref.set(new_water_vol)
 

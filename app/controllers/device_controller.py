@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from ..utils.response_util import ResponseUtil
-from firebase_admin import initialize_app, storage, db, firestore
+from firebase_admin import storage, firestore
 from firebase_admin.firestore import SERVER_TIMESTAMP
 import uuid
 import time
@@ -27,20 +27,17 @@ def create_device():
         "updatedAt": SERVER_TIMESTAMP,
         "name": name,
         "schedules": {},
+        "sensors": {
+            "lightIntensity": 0,
+            "soilMoisture": 0,
+            "temperature": 0,
+            "waterVol": 0,
+        },
         "token": token
     }
 
     try:
         client.collection('devices').document(str(device_id)).set(device)
-
-        device_rtdb = {
-            "lightIntensity": 0,
-            "waterVol": 0,
-            "watering": False,
-        }
-
-        rtdb_ref = db.reference(f'{device_id}')
-        rtdb_ref.set(device_rtdb)
 
         return ResponseUtil.success("Device created successfully", data=token)
 
@@ -83,74 +80,60 @@ def delete_device(device_id):
         else:
             return ResponseUtil.error("Device not found in Firestore", status_code=404)
 
-        rtdb_ref = db.reference(f'{device_id}')
-        rtdb_ref.delete()
-
         return ResponseUtil.success("Device deleted successfully")
 
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
-# TODO : deprecated
-@device_bp.route('/device/update_light_intensity', methods=['POST'])
-def update_light_intensity():
+@device_bp.route('/device/update_sensors', methods=['POST'])
+def update_sensors():
     data = request.json
     token = data.get('token')
-    new_light_intensity = data.get('lightIntensity')
+    light_intensity = data.get('lightIntensity')
+    water_vol = data.get('waterVol')
+    soil_moisture = data.get('soilMoisture')
+    temperature = data.get('temperature')
 
-    if not token:
+    # Validasi input
+    if token is None:
         return ResponseUtil.error("Token parameter is required", data=None, status_code=400)
+    if light_intensity is None:
+        return ResponseUtil.error("Light intensity parameter is required", data=None, status_code=400)
+    if water_vol is None:
+        return ResponseUtil.error("Water volume parameter is required", data=None, status_code=400)
+    if soil_moisture is None:
+        return ResponseUtil.error("Soil moisture parameter is required", data=None, status_code=400)
+    if temperature is None:
+        return ResponseUtil.error("Temperature parameter is required", data=None, status_code=400)
 
-    if new_light_intensity is None:
-        return ResponseUtil.error("lightIntensity parameter is required", data=None, status_code=400)
+    # Data sensor baru
+    sensors = {
+        "lightIntensity": light_intensity,
+        "soilMoisture": soil_moisture,
+        "temperature": temperature,
+        "waterVol": water_vol,
+    }
 
     try:
-        device_ref = client.collection('devices').where('token', '==', token).limit(1).get()
+        # Cari dokumen perangkat berdasarkan token
+        devices_ref = client.collection('devices')
+        query = devices_ref.where('token', '==', token).get()
 
-        if not device_ref:
-            return ResponseUtil.error("Device not found with the provided token", data=None, status_code=404)
+        if not query:
+            return ResponseUtil.error("Device not found with the given token", data=None, status_code=404)
 
-        device_data = device_ref[0].to_dict()
-        device_id = device_ref[0].id
+        # Ambil referensi dokumen
+        device_doc = query[0].reference
 
-        rtdb_ref = db.reference(f'{device_id}/lightIntensity')
-        rtdb_ref.set(new_light_intensity)
+        # Update data sensors dan updatedAt
+        device_doc.update({
+            "sensors": sensors,
+            "updatedAt": SERVER_TIMESTAMP
+        })
 
-        return ResponseUtil.success("lightIntensity updated successfully", data=new_light_intensity)
-
+        return ResponseUtil.success("Sensors updated successfully", data=None)
     except Exception as e:
-        return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
-
-# TODO : deprecated
-@device_bp.route('/device/update_water_vol', methods=['POST'])
-def update_water_vol():
-    data = request.json
-    token = data.get('token')
-    new_water_vol = data.get('waterVol')
-
-    if not token:
-        return ResponseUtil.error("Token parameter is required", data=None, status_code=400)
-
-    if new_water_vol is None:
-        return ResponseUtil.error("waterVol parameter is required", data=None, status_code=400)
-
-    try:
-        device_ref = client.collection('devices').where('token', '==', token).limit(1).get()
-
-        if not device_ref:
-            return ResponseUtil.error("Device not found with the provided token", data=None, status_code=404)
-
-        device_data = device_ref[0].to_dict()
-        device_id = device_ref[0].id
-
-        rtdb_ref = db.reference(f'{device_id}/waterVol')
-        rtdb_ref.set(new_water_vol)
-
-        return ResponseUtil.success("waterVol updated successfully", data=new_water_vol)
-
-    except Exception as e:
-        return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
-
+        return ResponseUtil.error(f"An error occurred: {str(e)}", data=None, status_code=500)
 
 @device_bp.route('/device/my', methods=['GET'])
 def my_devices():
@@ -161,23 +144,11 @@ def my_devices():
         return ResponseUtil.error("IDs must be a non-empty list", status_code=400)
 
     try:
-        devices_data = []
         for device_id in ids:
             device_ref = client.collection('devices').document(device_id).get()
             if device_ref.exists:
                 device_info = device_ref.to_dict()
-
-                # Retrieve lightIntensity and waterVol directly using device_id from Firebase RTDB
-                rtdb_ref = db.reference(device_id)
-                rtdb_data = rtdb_ref.get()
-
-                if rtdb_data:
-                    device_info['lightIntensity'] = rtdb_data.get('lightIntensity', -1)
-                    device_info['waterVol'] = rtdb_data.get('waterVol', -1)
-
-                devices_data.append(device_info)
-
-        return ResponseUtil.success("Devices retrieved successfully", data=devices_data)
+        return ResponseUtil.success("Devices retrieved successfully", data=device_info)
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
@@ -206,19 +177,6 @@ def device_detail(device_id):
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
-@device_bp.route('/device/<device_id>/photos/<photo_id>', methods=['GET'])
-def detail_photo(device_id, photo_id):
-    try:
-        photo_ref = client.collection('devices').document(device_id).collection('photos').document(photo_id).get()
-        
-        if photo_ref.exists:
-            photo_data = photo_ref.to_dict()
-            return ResponseUtil.success("Photo details retrieved successfully", data=photo_data)
-        else:
-            return ResponseUtil.error("Photo not found", status_code=404)
-    except Exception as e:
-        return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
-
 @device_bp.route('/device/<device_id>/photos', methods=['GET'])
 def photos(device_id):
     try:
@@ -237,6 +195,19 @@ def photos(device_id):
             photos_data.append(photo_dict)
 
         return ResponseUtil.success("Photos retrieved successfully", data=photos_data)
+    except Exception as e:
+        return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
+
+@device_bp.route('/device/<device_id>/photos/<photo_id>', methods=['GET'])
+def detail_photo(device_id, photo_id):
+    try:
+        photo_ref = client.collection('devices').document(device_id).collection('photos').document(photo_id).get()
+        
+        if photo_ref.exists:
+            photo_data = photo_ref.to_dict()
+            return ResponseUtil.success("Photo details retrieved successfully", data=photo_data)
+        else:
+            return ResponseUtil.error("Photo not found", status_code=404)
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
@@ -365,6 +336,8 @@ def add_history():
     is_manually = data.get('isManually')
     light_intensity = data.get('lightIntensity')
     water_vol = data.get('waterVol')
+    soil_moisture = data.get('soilMoisture')
+    temperature = data.get('temperature')
 
     if not token:
         return ResponseUtil.error("Token parameter is required", data=None, status_code=400)
@@ -376,6 +349,10 @@ def add_history():
         return ResponseUtil.error("Light intensity parameter is required", data=None, status_code=400)
     if water_vol is None:
         return ResponseUtil.error("Water volume parameter is required", data=None, status_code=400)
+    if soil_moisture is None:
+        return ResponseUtil.error("Soil oisture parameter is required", data=None, status_code=400)
+    if temperature is None:
+        return ResponseUtil.error("Temperature parameter is required", data=None, status_code=400)
 
     try:
         # Cari device berdasarkan token
@@ -394,7 +371,9 @@ def add_history():
             "schedule": schedule,
             "isManually": True if is_manually == "1" else False,
             "lightIntensity": light_intensity,
-            "waterVol": water_vol
+            "waterVol": water_vol,
+            "soilMoisture": soil_moisture,
+            "temperature": temperature,
         }
 
         # Menambahkan history ke dalam subkoleksi 'histories' dari device yang ditemukan

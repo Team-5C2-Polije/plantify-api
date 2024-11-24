@@ -81,6 +81,7 @@ def addDevice():
             my_device = {
                 device_id: {
                     "name": device_data['name'],
+                    "token": token,
                     "createdAt": createdAt
                 }
             }
@@ -102,7 +103,7 @@ def addDevice():
             user_devices.update(my_device)
             client.collection('users').document(user_doc.id).update({'devices': user_devices})
 
-            return ResponseUtil.success("Device added successfully", [])
+            return ResponseUtil.success("Device added successfully", data=None)
         
         else:
             return ResponseUtil.error("Device not found", data=None, status_code=400)

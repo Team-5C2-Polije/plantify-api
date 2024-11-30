@@ -144,13 +144,22 @@ def my_devices():
         return ResponseUtil.error("IDs must be a non-empty list", status_code=400)
 
     try:
+        devices_info = []  # List untuk menyimpan semua data perangkat
+
         for device_id in ids:
             device_ref = client.collection('devices').document(device_id).get()
             if device_ref.exists:
-                device_info = device_ref.to_dict()
-        return ResponseUtil.success("Devices retrieved successfully", data=device_info)
+                device_data = device_ref.to_dict() 
+                device_data['deviceId'] = device_ref.id 
+                devices_info.append(device_data)
+
+        if not devices_info:
+            return ResponseUtil.error("No devices found", status_code=404)
+
+        return ResponseUtil.success("Devices retrieved successfully", data=devices_info)
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
+
 
 @device_bp.route('/device/<device_id>', methods=['GET'])
 def device_detail(device_id):

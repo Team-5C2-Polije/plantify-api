@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from ..utils.response_util import ResponseUtil
 from firebase_admin import initialize_app, storage, credentials, firestore
 from firebase_admin.firestore import SERVER_TIMESTAMP
+from datetime import datetime
 
 auth_bp = Blueprint('auth', __name__)
 client = firestore.client()
@@ -86,6 +87,14 @@ def addDevice():
                 }
             }
 
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            device_response = {
+                device_id: {
+                    "name": device_data['name'],
+                    "createdAt": current_time,
+                }
+            }
+
             # Cari user berdasarkan email
             user_ref = client.collection('users').where('email', '==', email).limit(1).get()
             if not user_ref:
@@ -103,7 +112,7 @@ def addDevice():
             user_devices.update(my_device)
             client.collection('users').document(user_doc.id).update({'devices': user_devices})
 
-            return ResponseUtil.success("Device added successfully", data=None)
+            return ResponseUtil.success("Device added successfully", data=device_response)
         
         else:
             return ResponseUtil.error("Device not found", data=None, status_code=400)
@@ -111,7 +120,7 @@ def addDevice():
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
-@auth_bp.route('/delete_device/', methods=['DELETE'])
+@auth_bp.route('/del_device', methods=['POST'])
 def delete_device():
     data = request.json
     email = data.get('email')

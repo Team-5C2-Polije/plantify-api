@@ -4,8 +4,10 @@ from firebase_admin import storage, firestore
 from firebase_admin.firestore import SERVER_TIMESTAMP
 import uuid
 import time
-import random
 import string
+import random
+import requests
+import time
 
 device_bp = Blueprint('device', __name__)
 client = firestore.client()
@@ -44,7 +46,7 @@ def create_device():
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
     
-@device_bp.route('/device/update_device/', methods=['POST'])
+@device_bp.route('/device/update_device', methods=['POST'])
 def update_device_name():
     data = request.json
     device_id = data.get('device_id')
@@ -171,14 +173,13 @@ def device_detail(device_id):
 
             # Menghitung total dokumen di dalam koleksi "photos"
             photos_ref = client.collection('devices').document(device_id).collection('photos')
+            history_ref = client.collection('devices').document(device_id).collection('histories')
             total_photo = len(list(photos_ref.stream()))
-
-            # Menghitung total jadwal di dalam device_data['schedules']
-            total_schedule = len(device_data.get('schedules', []))
+            total_history = len(list(history_ref.stream()))
 
             # Tambahkan data total ke response
             device_data['total_photo'] = total_photo
-            device_data['total_schedule'] = total_schedule
+            device_data['total_history'] = total_history
 
             return ResponseUtil.success("Device details retrieved successfully", data=device_data)
         else:

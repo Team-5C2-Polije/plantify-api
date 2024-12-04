@@ -6,8 +6,18 @@ import uuid
 import time
 import string
 import random
-import requests
 import time
+import os
+from werkzeug.utils import secure_filename
+from inference_sdk import InferenceHTTPClient
+from PIL import Image, ImageDraw, ImageFont
+import warnings
+import pandas as pd
+import cv2
+import mahotas as mt
+warnings.filterwarnings("ignore", category=UserWarning, module="PIL")
+import joblib
+import shutil
 
 device_bp = Blueprint('device', __name__)
 client = firestore.client()
@@ -227,24 +237,50 @@ def upload_photo_to_storage(photo, folder):
     
     if not photo:
         raise ValueError("Photo file is required")
+    
+    # Define upload and output folder paths
+    upload_folder = os.path.abspath(f'files/temp/{folder}/')
+    os.makedirs(upload_folder, exist_ok=True)
+    output_folder = os.path.abspath(f'files/temp/{folder}/output')
+    os.makedirs(output_folder, exist_ok=True)
+    output_folder_crops = os.path.abspath(f'files/temp/{folder}/output_crops')
+    os.makedirs(output_folder_crops, exist_ok=True)
+
+    # Save the original photo
+    filename = secure_filename(photo.filename)
+    file_path = os.path.join(upload_folder, filename)
+    file_output = os.path.join(upload_folder, 'output.png')  # Output file for processed image
+    photo.save(file_path)
 
     try:
-        # Generate a unique file name
+        print("Detect function started")  # Debug log
+        # Process the image and save the output
+        detect(file_path, file_output, output_folder, output_folder_crops)
+
+        print("Image processed, starting upload to Firebase Storage")  # Debug log
+        # Upload the processed file (not the original one) to Firebase Storage
         file_name = f"{folder}/{uuid.uuid4()}.jpg"
-        bucket = storage.bucket("team-5c2-polije.appspot.com")  # Set bucket name secara eksplisit
+        bucket = storage.bucket("team-5c2-polije.appspot.com")
         blob = bucket.blob(file_name)
         
-        # Upload the file to Firebase Storage
-        blob.upload_from_file(photo, content_type=photo.content_type)
+        # Upload the processed file to Firebase Storage (use file_output here)
+        blob.upload_from_filename(file_output, content_type="image/jpeg")
         blob.make_public()
 
         # Get the URL for the uploaded photo
         photo_url = blob.public_url
 
+        print("Cleaning up temporary files...")  # Debug log
+        # Cleanup: Remove all files and folders inside upload_folder
+        shutil.rmtree(upload_folder)
+
         return photo_url
     except Exception as e:
+        # Cleanup in case of failure
+        if os.path.exists(upload_folder):
+            shutil.rmtree(upload_folder)
         raise RuntimeError(f"Error while uploading photo: {str(e)}")
-
+    
 @device_bp.route('/device/add_photo', methods=['POST'])
 def add_photo():
     data = request.files
@@ -488,3 +524,129 @@ def delete_schedule():
         return ResponseUtil.success("Schedule deleted successfully", data=None)
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
+
+def process_image(input_path, output_path, filename):
+    with Image.open(input_path).convert("RGB") as img:
+        resized_image = img.resize((512, 512))
+        output_file_path = os.path.join(output_path, filename)
+        os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+        resized_image.save(output_file_path)
+    print(f"Processed: {input_path} -> {output_file_path}")
+
+def extract_features(image_path):
+    try:
+        img = cv2.imread(image_path)
+        avg_color_per_row = cv2.mean(img)[:3]
+        R, G, B = avg_color_per_row
+
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        glcm = mt.features.haralick(img_gray).mean(axis=0)
+        contrast = glcm[1]
+        homogeneity = glcm[4]
+        energy = glcm[8]
+        correlation = glcm[2]
+
+        return [R, G, B, contrast, homogeneity, energy, correlation]
+    except Exception as e:
+        print(f"Gagal memproses {image_path}: {e}")
+        return None
+
+
+def predict_image(image_path, model):
+    features = extract_features(image_path)
+    if features is None:
+        print(f"Gagal mengekstraksi fitur dari gambar {image_path}.")
+        return None
+    
+    feature_names = ["R", "G", "B", "Kontras", "Homogenitas", "Energi", "Korelasi"]
+    features_df = pd.DataFrame([features], columns=feature_names)
+
+    prediction = model.predict(features_df)
+    return prediction[0]
+
+def predict_single_image(image_file):
+    file_path = os.path.join(f'files/', 'model.pkl')
+    model = joblib.load(file_path)
+
+    result = predict_image(image_file, model)
+    if result is not None:
+        label = "Sehat" if result == 1 else "Sakit"
+        return label
+    else:
+        return "Error dalam prediksi"
+
+# input gambar
+def detect(image_input, output_image, output_folder="output_crops", output_folder_procs="output_procs"):
+    
+    # setting font untuk bounding box
+    font_path = os.path.join(f'files/', 'poppins_bold.ttf')
+
+    try:
+        font = ImageFont.truetype(font_path, size=20)
+    except IOError:
+        print(f"Font '{font_path}' tidak ditemukan, menggunakan default font.")
+        font = ImageFont.load_default()
+
+    # list color bounding box
+    color_list = ["red", "blue", "purple", "navy", "magenta"]
+
+    # create output folder
+    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_folder_procs, exist_ok=True)
+
+    # Load image
+    image = Image.open(image_input)
+
+    # Create a copy for annotation
+    annotated_image = image.copy()
+    draw = ImageDraw.Draw(annotated_image)
+
+    # Load font
+    try:
+        font = ImageFont.truetype(font_path, 20)
+    except IOError:
+        font = ImageFont.load_default()
+
+    # Call API
+    CLIENT = InferenceHTTPClient(
+        api_url="https://detect.roboflow.com",
+        api_key="MIebZflR9bJdmpmXovTj"
+    )
+    result = CLIENT.infer(image_input, model_id="tomato-leaf-disease-rxcft/3?confidence=0.20")
+    print("PAYLOAD:", result)
+
+    # Process predictions
+    for idx, prediction in enumerate(result.get("predictions", [])):
+        x = prediction["x"]
+        y = prediction["y"]
+        width = prediction["width"]
+        height = prediction["height"]
+
+        # Calculate bounding box
+        left = x - width / 2
+        top = y - height / 2
+        right = x + width / 2
+        bottom = y + height / 2
+
+        # Crop image
+        cropped_image = image.crop((left, top, right, bottom))
+        os.makedirs(output_folder, exist_ok=True)
+        filename = f"crop_{idx + 1:02d}.png"
+        crop_output_path = os.path.join(output_folder, filename)
+        cropped_image.save(crop_output_path)
+
+        # Preprocessing and prediction
+        print('Preprocessing image:', crop_output_path)
+        os.makedirs(output_folder_procs, exist_ok=True)
+        process_image(crop_output_path, output_folder_procs, filename)
+        label = predict_single_image(crop_output_path)
+
+        # Add bounding box
+        color = random.choice(color_list)
+        draw.rectangle([(left, top), (right, bottom)], outline=color, width=3)
+        label_position = (left, top - 25)
+        draw.text(label_position, label, fill=color, font=font)
+
+    # Save annotated image
+    annotated_image.save(output_image)
+    print(f"Annotated image with bounding boxes and labels saved at: {output_image}")

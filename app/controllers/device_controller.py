@@ -18,6 +18,7 @@ import mahotas as mt
 warnings.filterwarnings("ignore", category=UserWarning, module="PIL")
 import joblib
 import shutil
+import json
 
 device_bp = Blueprint('device', __name__)
 client = firestore.client()
@@ -255,7 +256,9 @@ def upload_photo_to_storage(photo, folder):
     try:
         print("Detect function started")  # Debug log
         # Process the image and save the output
-        detect(file_path, file_output, output_folder, output_folder_crops)
+        predictions = detect(file_path, file_output, output_folder, output_folder_crops)
+
+        # print('json : ', str(predictions))
 
         print("Image processed, starting upload to Firebase Storage")  # Debug log
         # Upload the processed file (not the original one) to Firebase Storage
@@ -274,7 +277,7 @@ def upload_photo_to_storage(photo, folder):
         # Cleanup: Remove all files and folders inside upload_folder
         shutil.rmtree(upload_folder)
 
-        return photo_url
+        return photo_url, predictions
     except Exception as e:
         # Cleanup in case of failure
         if os.path.exists(upload_folder):
@@ -296,12 +299,17 @@ def add_photo():
 
     try:
         # Mengunggah foto dan mendapatkan URL
-        photoUrl = upload_photo_to_storage(photo, device_id)
+        photoUrl, predictions = upload_photo_to_storage(photo, device_id)
+
+        print('predict : ', predictions)
+        print('predict : ', photoUrl)
+
         if photoUrl:
             new_photo = {
                 "createdAt": SERVER_TIMESTAMP,
                 "photoUrl": photoUrl,
-                "updatedAt": SERVER_TIMESTAMP
+                "updatedAt": SERVER_TIMESTAMP,
+                "predictions": predictions
             }
             # Menyimpan data new_photo ke Firestore
             client.collection('devices').document(device_id).collection('photos').add(new_photo)
@@ -310,7 +318,7 @@ def add_photo():
         else:
             return ResponseUtil.error("Failed to upload photo", data=None, status_code=500)
     except Exception as e:
-        return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
+        return ResponseUtil.error(f"Internal Server Error add_photo: {str(e)}", status_code=500)
 
 @device_bp.route('/device/add_photo_by_token', methods=['POST'])
 def add_photo_by_token():
@@ -337,12 +345,14 @@ def add_photo_by_token():
         device_id = device_ref[0].id
 
         # Mengunggah foto dan mendapatkan URL
-        photoUrl = upload_photo_to_storage(photo, device_id)
+        photoUrl, predictions = upload_photo_to_storage(photo, device_id)
+        predictions = json.loads(predictions)
         if photoUrl:
             new_photo = {
                 "createdAt": SERVER_TIMESTAMP,
                 "photoUrl": photoUrl,
-                "updatedAt": SERVER_TIMESTAMP
+                "updatedAt": SERVER_TIMESTAMP,
+                "predictions": predictions
             }
             # Menyimpan data new_photo ke Firestore di koleksi 'photos' pada perangkat yang ditemukan
             client.collection('devices').document(device_id).collection('photos').add(new_photo)
@@ -615,6 +625,8 @@ def detect(image_input, output_image, output_folder="output_crops", output_folde
     result = CLIENT.infer(image_input, model_id="tomato-leaf-disease-rxcft/3?confidence=0.20")
     print("PAYLOAD:", result)
 
+    predictions = []
+
     # Process predictions
     for idx, prediction in enumerate(result.get("predictions", [])):
         x = prediction["x"]
@@ -641,6 +653,14 @@ def detect(image_input, output_image, output_folder="output_crops", output_folde
         process_image(crop_output_path, output_folder_procs, filename)
         label = predict_single_image(crop_output_path)
 
+        predictions.append({
+            "x": prediction["x"],
+            "y": prediction["y"],
+            "width": prediction["width"],
+            "height": prediction["height"],
+            "label": label,
+        })
+
         # Add bounding box
         color = random.choice(color_list)
         draw.rectangle([(left, top), (right, bottom)], outline=color, width=3)
@@ -650,3 +670,5 @@ def detect(image_input, output_image, output_folder="output_crops", output_folde
     # Save annotated image
     annotated_image.save(output_image)
     print(f"Annotated image with bounding boxes and labels saved at: {output_image}")
+
+    return predictions

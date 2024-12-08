@@ -119,6 +119,32 @@ def addDevice():
 
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
+    
+@auth_bp.route('/logout', methods=['POST'])
+def logout():
+    data = request.json
+    email = data.get('email')
+
+    if not email:
+        return ResponseUtil.error("Email name parameter is required", data=None, status_code=400)
+
+    try:
+        user_ref = client.collection('users').where('email', '==', email)
+        user_docs = user_ref.get()
+
+        if user_docs:
+            user_doc = user_docs[0]
+            user_doc.reference.update({
+                "fcmToken": "",
+                "updatedAt": SERVER_TIMESTAMP
+            })
+        else:
+            return ResponseUtil.error("User not found in Firestore", status_code=404)
+
+        return ResponseUtil.success("User logged out successfully")
+
+    except Exception as e:
+        return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
 @auth_bp.route('/del_device', methods=['POST'])
 def delete_device():
@@ -148,6 +174,39 @@ def delete_device():
         client.collection('users').document(user_doc.id).update({'devices': user_devices})
 
         return ResponseUtil.success("Device deleted successfully")
+
+    except Exception as e:
+        return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
+
+
+@auth_bp.route('/notifications', methods=['GET'])
+def histories():
+    try:
+        data = request.json
+        email = data.get('email')
+
+        if not email:
+            return ResponseUtil.error("Email parameter is required", data=None, status_code=400)
+
+        users_ref = client.collection('users').where('email', '==', email)
+        user_doc = users_ref.get()
+
+        if not user_doc:
+            return ResponseUtil.error("No user found with the given email", data=None, status_code=404)
+
+        notif_data = []
+
+        for user in user_doc:
+            notif_ref = user.reference.collection('notifications') \
+                                     .order_by('sendAt', direction=firestore.Query.DESCENDING) \
+                                     .get()
+
+            for notif in notif_ref:
+                notif_dict = notif.to_dict()
+                notif_dict['id'] = notif.id 
+                notif_data.append(notif_dict)
+
+        return ResponseUtil.success("Notif retrieved successfully", data=notif_data)
 
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)

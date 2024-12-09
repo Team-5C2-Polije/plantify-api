@@ -145,20 +145,34 @@ def update_sensors():
             "updatedAt": SERVER_TIMESTAMP
         })
 
+        data_input = {
+            "token": token,
+            "schedule": "00:00",
+            "isManually": "1",
+            "lightIntensity": light_intensity,
+            "soilMoisture": soil_moisture,
+            "temperature": temperature,
+            "waterVol": water_vol,
+        }
+
+        add_history(data_input)
+
         # Get the actual data of the device document
         device_data = device_doc.get().to_dict()
 
-        # Data untuk notifikasi
-        send_notif = {
-            "deviceName": device_data['name'],
-            'waterVol': water_vol,
-            'token': token,
-            'title': 'Volume air tinggal ' + str(water_vol) + '%',
-            'body': 'Segera lakukan pengisian air agar penyiraman dapat berlanjut'
-        }
+        if water_vol <= 30.0:
+            # Data untuk notifikasi
+            print('send notif')
+            send_notif = {
+                "deviceName": device_data['name'],
+                'waterVol': water_vol,
+                'token': token,
+                'title': 'Volume air tinggal ' + str(water_vol) + '%',
+                'body': 'Segera lakukan pengisian air agar penyiraman dapat berlanjut'
+            }
 
-        response = send_notifications_util(token, send_notif)
-        print('response : ', response)
+            response = send_notifications_util(token, send_notif)
+            print('response : ', response)
 
         return ResponseUtil.success("Sensors updated successfully", data=None)
     except Exception as e:
@@ -403,10 +417,9 @@ def histories(device_id):
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
-@device_bp.route('/device/add_history', methods=['POST'])
-def add_history():
-    data = request.json
-    token = data.get('token')  # Menggunakan token
+def add_history(data):
+    # Ambil data dari input
+    token = data.get('token')
     schedule = data.get('schedule')
     is_manually = data.get('isManually')
     light_intensity = data.get('lightIntensity')
@@ -414,6 +427,7 @@ def add_history():
     soil_moisture = data.get('soilMoisture')
     temperature = data.get('temperature')
 
+    # Validasi input
     if not token:
         return ResponseUtil.error("Token parameter is required", data=None, status_code=400)
     if schedule is None:
@@ -425,7 +439,7 @@ def add_history():
     if water_vol is None:
         return ResponseUtil.error("Water volume parameter is required", data=None, status_code=400)
     if soil_moisture is None:
-        return ResponseUtil.error("Soil oisture parameter is required", data=None, status_code=400)
+        return ResponseUtil.error("Soil moisture parameter is required", data=None, status_code=400)
     if temperature is None:
         return ResponseUtil.error("Temperature parameter is required", data=None, status_code=400)
 
@@ -457,7 +471,6 @@ def add_history():
         return ResponseUtil.success("History added successfully", data=None)
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
-
 
 @device_bp.route('/device/add_schedule', methods=['POST'])
 def add_schedule():

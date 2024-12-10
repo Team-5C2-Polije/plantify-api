@@ -339,7 +339,8 @@ def add_photo():
                 "createdAt": SERVER_TIMESTAMP,
                 "photoUrl": photoUrl,
                 "updatedAt": SERVER_TIMESTAMP,
-                "predictions": predictions
+                "predictions": predictions,
+                'from': 'Mobile'
             }
             # Menyimpan data new_photo ke Firestore
             client.collection('devices').document(device_id).collection('photos').add(new_photo)
@@ -385,7 +386,8 @@ def add_photo_by_token():
                 "createdAt": SERVER_TIMESTAMP,
                 "photoUrl": photoUrl,
                 "updatedAt": SERVER_TIMESTAMP,
-                "predictions": predictions
+                "predictions": predictions,
+                "from": "Camera"
             }
             # Menyimpan data new_photo ke Firestore di koleksi 'photos' pada perangkat yang ditemukan
             client.collection('devices').document(device_id).collection('photos').add(new_photo)
@@ -403,6 +405,7 @@ def histories(device_id):
                                .document(device_id) \
                                .collection('histories') \
                                .order_by('createdAt', direction=firestore.Query.DESCENDING) \
+                               .limit(30) \
                                .get()
 
         histories_data = []

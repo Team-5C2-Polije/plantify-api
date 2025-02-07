@@ -1,4 +1,5 @@
 import os
+import io
 import json
 import time
 import uuid
@@ -21,6 +22,7 @@ import pytz
 from inference_sdk import InferenceHTTPClient
 warnings.filterwarnings("ignore", category=UserWarning, module="PIL")
 from ..utils.response_util import ResponseUtil
+from rembg import remove
 
 device_bp = Blueprint('device', __name__)
 client = firestore.client()
@@ -570,12 +572,30 @@ def delete_schedule():
     except Exception as e:
         return ResponseUtil.error(f"Internal Server Error: {str(e)}", status_code=500)
 
+# def process_image(input_path, output_path, filename):
+#     with Image.open(input_path).convert("RGB") as img:
+#         resized_image = img.resize((512, 512))
+#         output_file_path = os.path.join(output_path, filename)
+#         os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+#         resized_image.save(output_file_path)
+#     print(f"Processed: {input_path} -> {output_file_path}")
+
 def process_image(input_path, output_path, filename):
-    with Image.open(input_path).convert("RGB") as img:
-        resized_image = img.resize((512, 512))
-        output_file_path = os.path.join(output_path, filename)
+    with open(input_path, "rb") as input_file:
+        input_image = input_file.read()
+        output_image = remove(input_image)  # Remove background
+    # Remove background dan konversi gambar
+    with Image.open(io.BytesIO(output_image)).convert("RGBA") as img:
+        # Ubah background menjadi putih
+        background = Image.new("RGBA", img.size, (255, 255, 255, 255))
+        white_background = Image.alpha_composite(background, img).convert("RGB")
+        # Resize gambar ke 512x512
+        resized_image = white_background.resize((512, 512))
+        # Gabungkan output folder dengan nama file
+        output_file_path = os.path.join(output_path, filename)  # Correct the file path
+        # Pastikan folder tujuan ada sebelum menyimpan file
         os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
-        resized_image.save(output_file_path)
+        resized_image.save(output_file_path)  # Save the resized image
     print(f"Processed: {input_path} -> {output_file_path}")
 
 def extract_features(image_path):
@@ -609,10 +629,22 @@ def predict_image(image_path, model):
     prediction = model.predict(features_df)
     return prediction[0]
 
-def predict_single_image(image_file):
-    file_path = os.path.join(f'files/', 'model.pkl')
-    model = joblib.load(file_path)
+# def predict_single_image(image_file):
+#     file_path = os.path.join(f'files/', 'decision_dataset_12_08.pkl')
+#     model = joblib.load(file_path)
 
+#     result = predict_image(image_file, model)
+#     if result is not None:
+#         label = "Sehat" if result == 1 else "Sakit"
+#         return label
+#     else:
+#         return "Error dalam prediksi"
+
+def predict_single_image(image_file):
+    file_path = os.path.join(f'files/', 'decision_dataset_12_08.pkl')
+    model = joblib.load(file_path)
+    print(f"Model berhasil dimuat dari {file_path}")
+    # Prediksi
     result = predict_image(image_file, model)
     if result is not None:
         label = "Sehat" if result == 1 else "Sakit"

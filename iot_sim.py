@@ -13,7 +13,7 @@ def generate_random_data():
 
 def call_update_sensors():
     """Call the update_sensors API with random data."""
-    url = "http://192.168.34.152:5000/device/update_sensors"
+    url = "http://192.168.110.153:5000/device/update_sensors"
     token = "h6zhsIrshy80iXMIcawg"
 
     data = generate_random_data()
